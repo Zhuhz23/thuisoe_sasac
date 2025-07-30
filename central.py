@@ -154,8 +154,7 @@ def check_password():
         return True
 
 
-if check_password():
-        
+if check_password():       
     DATA_FILE = "data_central.xlsx"
     # 采用全新的两步调用方式
     df_raw = get_raw_df_from_excel(DATA_FILE)
@@ -220,22 +219,44 @@ if check_password():
         else:
             # --- 高级样式自定义 ---
             with st.expander("🎨 高级图表样式自定义"):
+                
+                # ▼▼▼ 修改点 1：新增年份范围筛选 ▼▼▼
+                st.markdown("**筛选设置**")
+                all_years = sorted(df['年份'].unique())
+                # 确保在数据为空或只有一个年份时不会报错
+                if len(all_years) > 1:
+                    selected_year_range = st.select_slider(
+                        "选择年份范围",
+                        options=all_years,
+                        value=(all_years[0], all_years[-1]), # 默认选择全部范围
+                        key="year_range_slider"
+                    )
+                else:
+                    # 如果只有一个年份或没有年份，则禁用滑块
+                    selected_year_range = (all_years[0], all_years[0]) if all_years else (None, None)
+                    st.select_slider("选择年份范围", options=all_years, value=selected_year_range, disabled=True)
+                
+                # ▼▼▼ 修改点 2：将高亮线开关升级为多选框 ▼▼▼
+                # ▼▼▼ 修改后的新代码 ▼▼▼
+                highlight_years = st.multiselect(
+                    "高亮显示年份",
+                    options=all_years, # 使用从数据中动态获取的全部年份列表
+                    #default=[2020], # 如果需要，可以设置默认高亮的年份，例如 default=[2020]
+                    key="highlight_years_multiselect"
+                )
+                # ▲▲▲ 修改结束 ▲▲▲
+    
+                st.markdown("**样式设置**")
                 cols_expander = st.columns(2)
                 with cols_expander[0]:
                     font_list = ["Arial", "Noto Sans CJK SC", "Times New Roman", "Courier New"]
                     selected_font = st.selectbox("选择图表全局字体", font_list, index=0)
-                with cols_expander[1]:
-                    show_vline = st.toggle("显示2020年高亮线", value=False)
                 
-                st.markdown("---")
-                st.markdown("**单项指标样式设置**")
-                
-                # --- 智能计算Y轴的默认分配 ---
+                # (后续的单项指标样式设置逻辑无变化)
                 selected_metrics_df = df[df['指标名称'].isin(st.session_state.selected_metrics)]
                 unique_units = selected_metrics_df['单位'].unique()
                 default_axis_assignments = {}
                 has_percent_unit = any('%' in str(u) for u in unique_units)
-    
                 if len(unique_units) > 1 and has_percent_unit:
                     for _, row in selected_metrics_df.drop_duplicates(subset=['指标名称']).iterrows():
                         metric_name = row['指标名称']
@@ -247,14 +268,11 @@ if check_password():
                 else:
                     for metric_name in st.session_state.selected_metrics:
                         default_axis_assignments[metric_name] = 0
-    
-                # --- 循环生成每个指标的样式设置UI ---
                 default_colors = px.colors.qualitative.Plotly
                 default_shapes = ['circle', 'square', 'diamond', 'cross', 'x', 'triangle-up']
                 default_styles = ['solid', 'dash', 'dot', 'dashdot']
                 style_settings = {}
                 axis_map = {"左轴": "y1", "右轴": "y2"}
-    
                 header_cols = st.columns([2, 2, 1, 1, 1])
                 with header_cols[0]:
                      st.markdown("**指标名称**")
@@ -266,44 +284,33 @@ if check_password():
                     st.markdown("**形状**")
                 with header_cols[4]:
                     st.markdown("**线条**")
-    
                 for i, metric in enumerate(st.session_state.selected_metrics):
                     cols = st.columns([2, 2, 1, 1, 1])
                     with cols[0]:
                         st.markdown(f"`{metric}`")
                     with cols[1]:
-                        axis_choice = st.radio(
-                            "Y轴分配", ("左轴", "右轴"),
-                            index=default_axis_assignments.get(metric, 0),
-                            key=f"axis_{metric}", horizontal=True, label_visibility="collapsed"
-                        )
+                        axis_choice = st.radio("Y轴分配", ("左轴", "右轴"), index=default_axis_assignments.get(metric, 0), key=f"axis_{metric}", horizontal=True, label_visibility="collapsed")
                     with cols[2]:
-                        color = st.color_picker(
-                            "线条颜色", value=default_colors[i % len(default_colors)],
-                            key=f"color_{metric}", label_visibility="collapsed"
-                        )
+                        color = st.color_picker("线条颜色", value=default_colors[i % len(default_colors)], key=f"color_{metric}", label_visibility="collapsed")
                     with cols[3]:
-                        shape = st.selectbox(
-                            "标记形状", options=default_shapes, index=i % len(default_shapes),
-                            key=f"shape_{metric}", label_visibility="collapsed"
-                        )
+                        shape = st.selectbox("标记形状", options=default_shapes, index=i % len(default_shapes), key=f"shape_{metric}", label_visibility="collapsed")
                     with cols[4]:
-                        style = st.selectbox(
-                            "线条样式", options=default_styles, index=i % len(default_styles),
-                            key=f"style_{metric}", label_visibility="collapsed"
-                        )
-                    style_settings[metric] = {
-                        "axis": axis_map[axis_choice], "color": color,
-                        "shape": shape, "style": style
-                    }
+                        style = st.selectbox("线条样式", options=default_styles, index=i % len(default_styles), key=f"style_{metric}", label_visibility="collapsed")
+                    style_settings[metric] = {"axis": axis_map[axis_choice], "color": color, "shape": shape, "style": style}
             
             # --- 绘图逻辑 ---
             plot_df = df[df['指标名称'].isin(st.session_state.selected_metrics)].copy()
     
-            # 根据用户在UI上的最终选择，来决定Y轴的标题和是否需要副轴
+            # ▼▼▼ 修改点 3：应用年份范围筛选 ▼▼▼
+            if selected_year_range[0] is not None:
+                 plot_df = plot_df[
+                      (plot_df['年份'] >= selected_year_range[0]) &
+                      (plot_df['年份'] <= selected_year_range[1])
+                 ]
+            # ▲▲▲ 修改结束 ▲▲▲
+    
             left_axis_units, right_axis_units = set(), set()
             metrics_to_units = pd.Series(plot_df.单位.values, index=plot_df.指标名称).to_dict()
-    
             for metric, settings in style_settings.items():
                 unit = metrics_to_units.get(metric)
                 if unit:
@@ -311,63 +318,42 @@ if check_password():
                         right_axis_units.add(unit)
                     else:
                         left_axis_units.add(unit)
-            
-            y_axis_titles = {
-                "y1": ", ".join(sorted(list(left_axis_units))),
-                "y2": ", ".join(sorted(list(right_axis_units)))
-            }
+            y_axis_titles = {"y1": ", ".join(sorted(list(left_axis_units))), "y2": ", ".join(sorted(list(right_axis_units)))}
             y_axes_needed = bool(right_axis_units)
     
-            # 开始绘图
             fig = go.Figure()
-    
             for i, metric in enumerate(st.session_state.selected_metrics):
                 metric_data = plot_df[plot_df['指标名称'] == metric]
                 metric_style = style_settings.get(metric, {})
-                
-                # 动态构建带Y轴信息的图例名称
                 axis_id = metric_style.get('axis', 'y1')
                 axis_label = "右轴" if axis_id == 'y2' else "左轴"
                 legend_name_with_axis = f"{metric} ({axis_label})"
-                
                 fig.add_trace(go.Scatter(
-                    x=metric_data['年份'],
-                    y=metric_data['数值'],
-                    name=legend_name_with_axis, # 使用带有轴信息的新名称
-                    yaxis=axis_id,
+                    x=metric_data['年份'], y=metric_data['数值'], name=legend_name_with_axis, yaxis=axis_id,
                     mode='lines+markers+text',
                     line=dict(color=metric_style.get('color'), dash=metric_style.get('style')),
                     marker=dict(symbol=metric_style.get('shape'), size=8),
-                    text=metric_data['标签'],
-                    textposition='top center',
-                    texttemplate='%{text}'
+                    text=metric_data['标签'], textposition='top center', texttemplate='%{text}'
                 ))
     
-            if show_vline:
-                fig.add_vline(x=2020, line_width=2, line_dash="dash", line_color="grey", annotation_text="2020年", annotation_position="top right")
+            # ▼▼▼ 修改点 4：根据多选框循环添加高亮线 ▼▼▼
+            if highlight_years:
+                for year in highlight_years:
+                    fig.add_vline(x=year, line_width=2, line_dash="dash", line_color="grey", annotation_text=f"{year}年", annotation_position="top right")
+            # ▲▲▲ 修改结束 ▲▲▲
     
-            # 更新图表布局
             layout_args = {
                 "title_text": f"<b>'{'、'.join(st.session_state.selected_metrics)}' 时间序列趋势</b>",
-                "xaxis_title": "年份",
-                "yaxis_title": y_axis_titles["y1"],
-                "legend_title": "指标名称",
-                "font": {"family": selected_font},
-                "height": 600,
+                "xaxis_title": "年份", "yaxis_title": y_axis_titles["y1"], "legend_title": "指标名称",
+                "font": {"family": selected_font}, "height": 600,
                 "xaxis": dict(tickmode='linear', dtick=1, tickformat='d'),
                 "margin": dict(l=20, r=20, t=50, b=20)
             }
             if y_axes_needed:
-                layout_args["yaxis2"] = {
-                    "title": y_axis_titles["y2"],
-                    "overlaying": 'y',
-                    "side": 'right'
-                }
+                layout_args["yaxis2"] = {"title": y_axis_titles["y2"], "overlaying": 'y', "side": 'right'}
             fig.update_layout(**layout_args)
-            
             st.plotly_chart(fig, use_container_width=True)
     
-            # --- 数据详情 ---
             st.markdown("---")
             st.markdown("### 筛选后的数据详情")
             st.info("💡 **提示**：将鼠标悬停在下方表格的右上角，即可看到下载按钮，可将筛选结果导出为CSV文件。")
